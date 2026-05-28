@@ -127,14 +127,15 @@ def run_backend():
     os.makedirs("/app/ts_state", exist_ok=True)
     os.makedirs("/app/ts_run", exist_ok=True)
     
-    # 静默拉起服务
+    # 靜默拉起服務
     os.system("/usr/sbin/tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:12371 --statedir=/app/ts_state --socket=/app/ts_run/tailscaled.sock > /dev/null 2>&1 &")
     
     time.sleep(3)
     auth_key = os.getenv("TAILSCALE_AUTHKEY", "")
     if auth_key:
-        os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key}")
-        print("✅ Tailscale 隧道就緒，Zeabur 內網連線鎖定！", flush=True)
+        # 【核心鎖定】：強行指定 --hostname，去掉隨機後綴
+        os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy")
+        print("✅ Tailscale 隧道就緒，固定名稱 render-proxy 已鎖定！", flush=True)
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(line_buffering=True)
