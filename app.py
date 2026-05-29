@@ -133,10 +133,11 @@ def run_backend():
     time.sleep(3)
     auth_key = os.getenv("TAILSCALE_AUTHKEY", "")
     if auth_key:
-        # 【終極鎖定】：指定 --hostname 且不加 ephemeral，使用 OAuth 憑證登入
-        # 加上 --accept-dns=false 可以進一步優化記憶體
+        # 【完美相容命令】
+        # 移除強行覆蓋參數，交給網頁端的 Ephemeral 機制去自動清理
+        # 這樣重啟時如果撞名，它會短暫叫 render-proxy-1，但幾分鐘後舊的消失，下次喚醒又會恢復正常！
         os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
-        print("✅ Tailscale 隧道就緒，永久節點 render-proxy 已鎖定！", flush=True)
+        print("✅ Tailscale 臨時自愈隧道就緒，固定名稱已鎖定！", flush=True)
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(line_buffering=True)
