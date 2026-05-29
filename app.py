@@ -4,6 +4,10 @@ import time
 import datetime
 import threading
 from flask import Flask, render_template_string, request, redirect, url_for
+import subprocess
+import json
+import urllib.request
+import base64
 
 app = Flask(__name__)
 
@@ -122,17 +126,12 @@ def home():
             
     return render_template_string(HTML_TEMPLATE, messages=MESSAGES, total_count=len(MESSAGES))
 
-import os
-import time
-import subprocess
-import json
-
 def run_backend():
     print("=== [後台] 正在建立 Zeabur 純淨網絡隧道 ===", flush=True)
-    os.makedirs("/app/ts_state", True)
-    os.makedirs("/app/ts_run", True)
+    os.makedirs("/app/ts_state", exist_ok=True)
+    os.makedirs("/app/ts_run", exist_ok=True)
     
-    # 1. 正常拉起底層服務
+    # 1. 拉起服務底層
     os.system("/usr/sbin/tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:12371 --statedir=/app/ts_state --socket=/app/ts_run/tailscaled.sock > /dev/null 2>&1 &")
     time.sleep(2)
     
@@ -142,14 +141,13 @@ def run_backend():
         print("❌ 未檢測到 TAILSCALE_AUTHKEY，終止啟動。", flush=True)
         return
 
-    # 2. 第一次嘗試登入
+    # 2. 第一次登入嘗試（如果撞名，此時會拿到後綴）
     os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
     
-    print("🚀 [限時自愈] 啟動奪名監控（最高限時 60 秒，完成後全自動銷毀）...", flush=True)
+    print("🚀 [限時自愈] 啟動奪名監控（最高 60 次嘗試，成功後自動銷毀）...", flush=True)
+    has_killed = False 
     
-    has_killed = False # 擊殺狀態鎖，防止重複調用 API
-    
-    # 3. 有限次數高頻循環（最多 60 次，完成後不論結果，必定死鎖退出）
+    # 3. 監控循環（3秒一次）
     for i in range(60):
         time.sleep(3)
         try:
@@ -161,39 +159,56 @@ def run_backend():
             status_data = json.loads(result.stdout)
             full_status_name = status_data.get("Self", {}).get("DNSName", "").split(".")[0]
             
-            # 完美狀態：名字完全歸位
+            # 情況一：大獲全勝，名稱完美歸位
             if full_status_name == "render-proxy":
-                print(f"🎉 成功！正統名稱 [render-proxy] 已鎖定（耗時 {i*3} 秒）。", flush=True)
+                print(f"🎉 成功！正統名稱 [render-proxy] 已成功鎖定（耗時 {i*3} 秒）。", flush=True)
                 break
                 
-            # 遭逢撞名，且還沒有發動過 API 擊殺
+            # 情況二：發現撞名後綴，且還沒有發動過 API 擊殺
             elif "render-proxy-" in full_status_name and not has_killed:
-                print(f"⚠️ 檢測到名稱被降級為: {full_status_name}，啟動雲端精準清理...", flush=True)
+                print(f"⚠️ 檢測到自身名稱被降級為: {full_status_name}，開始無情清理...", flush=True)
                 
                 peers = status_data.get("Peer", {})
+                target_api_id = None
+                
+                # 遍歷尋找那個擋路的、叫 render-proxy 的設備
                 for peer_id, peer_info in peers.items():
                     if peer_info.get("HostName", "") == "render-proxy":
-                        print(f"💥 發現佔位的舊節點 (ID: {peer_id})，發射 API 註銷指令...", flush=True)
-                        
-                        url = f"https://api.tailscale.com/api/v2/device/{peer_id}"
-                        response = requests.delete(url, auth=('', api_secret))
-                        
-                        if response.status_code in [200, 204]:
-                            print("🗡️ 雲端舊租約已強制抹除！等待 5 秒讓雲端同步並重新衝鋒...", flush=True)
-                            has_killed = True # 鎖定狀態
-                            time.sleep(5) 
-                            # 重新申請正統名字
-                            os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
-                        else:
-                            print(f"❌ API 執行失敗，狀態碼: {response.status_code}，本次開機不再重試。", flush=True)
-                            has_killed = True # 失敗也鎖定，防止刷接口
+                        # 👑 核心修正：從 peer_info 內部提取純數字的 API 專用 ID！
+                        target_api_id = peer_info.get("ID", "")
                         break
+                
+                if target_api_id:
+                    print(f"💥 找到佔位者的真實 API ID: {target_api_id}，發射 API 註銷指令...", flush=True)
+                    
+                    url = f"https://api.tailscale.com/api/v2/device/{target_api_id}"
+                    req = urllib.request.Request(url, method="DELETE")
+                    
+                    # Basic Auth 認證
+                    auth_str = base64.b64encode(f":{api_secret}".encode()).decode()
+                    req.add_header("Authorization", f"Basic {auth_str}")
+                    
+                    try:
+                        with urllib.request.urlopen(req) as response:
+                            if response.status in [200, 204]:
+                                print("🗡️ 雲端幽靈已徹底抹除！等待 5 秒重新衝鋒...", flush=True)
+                                has_killed = True 
+                                time.sleep(5)
+                                # 踢掉攔路虎後，重新要回正統名字
+                                os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
+                            else:
+                                print(f"❌ API 執行失敗，狀態碼: {response.status}，本次開機不再重試。", flush=True)
+                                has_killed = True
+                    except Exception as api_err:
+                        print(f"❌ API 請求發送失敗: {str(api_err)}", flush=True)
+                        has_killed = True
+                else:
+                    print("ℹ️ 暫未在局域網列表中找到叫 render-proxy 的佔位設備，等待下個週期...", flush=True)
                         
         except Exception as e:
             print(f"限時監控循環中出現輕微異常: {str(e)}", flush=True)
             
-    # 4. 徹底與守護進程劃清界限
-    print("🏁 [限時自愈] 1 分鐘生命週期結束，監控線程已徹底退出並銷毀，零資源佔用。", flush=True)
+    print("🏁 [限時自愈] 監控線程已徹底退出並銷毀。", flush=True)
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(line_buffering=True)
