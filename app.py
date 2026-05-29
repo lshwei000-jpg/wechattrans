@@ -132,7 +132,7 @@ def run_backend():
     os.makedirs("/app/ts_run", exist_ok=True)
     
     # 1. 拉起服務底層
-    os.system("/usr/sbin/tailscaled --tun=userspace-networking --socks5-server=0.0.0.1:11111 --statedir=/app/ts_state --socket=/app/ts_run/tailscaled.sock > /dev/null 2>&1 &")
+    os.system("/usr/sbin/tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:11111 --statedir=/app/ts_state --socket=/app/ts_run/tailscaled.sock > /dev/null 2>&1 &")
     time.sleep(3)
     
     auth_key = os.getenv("TAILSCALE_AUTHKEY", "")
