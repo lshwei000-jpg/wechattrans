@@ -134,6 +134,7 @@ def run_backend():
     auth_key = os.getenv("TAILSCALE_AUTHKEY", "")
     if auth_key:
         # 【程式碼層級臨時節點防撞名暗號】：
+        # 移除了 --force-reauth
         # 加上 --ephemeral 讓 Tailscale 後台在它斷線時秒刪它，騰出名字給下一次重啟
         os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --ephemeral --accept-dns=false")
         print("✅ Tailscale 臨時自愈隧道就緒，固定名稱 render-proxy 已鎖定！", flush=True)
