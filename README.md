@@ -28,4 +28,6 @@
 
 	注册Cronjob，网站地址：https://cron-job.org/en/
 	使用在Render 页面左上角（项目名称下方），会看到一个形如https://xxxx.onrender.com的免费公网网址，Cronjob设置每10min或者13min访问一次，防止睡眠
-	选择“自订”，填入*/10 8-22 * * *，代表每天8点到22点每隔10min唤醒一次，防止休眠；
+	选择每隔10min唤醒一次，防止休眠；
+	<img width="1148" height="397" alt="image" src="https://github.com/user-attachments/assets/fff2c8e9-9161-4d3e-90e5-1e45697bca33" />
+
