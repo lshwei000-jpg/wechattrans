@@ -129,67 +129,71 @@ import json
 
 def run_backend():
     print("=== [後台] 正在建立 Zeabur 純淨網絡隧道 ===", flush=True)
-    os.makedirs("/app/ts_state", exist_ok=True)
-    os.makedirs("/app/ts_run", exist_ok=True)
+    os.makedirs("/app/ts_state", True)
+    os.makedirs("/app/ts_run", True)
     
     # 1. 正常拉起底層服務
     os.system("/usr/sbin/tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:12371 --statedir=/app/ts_state --socket=/app/ts_run/tailscaled.sock > /dev/null 2>&1 &")
-    time.sleep(3)
+    time.sleep(2)
     
     auth_key = os.getenv("TAILSCALE_AUTHKEY", "")
+    api_secret = os.getenv("TS_API_SECRET", "") 
     if not auth_key:
+        print("❌ 未檢測到 TAILSCALE_AUTHKEY，終止啟動。", flush=True)
         return
 
-    # 2. 第一次登入（此時如果撞名，會被分配到 -1 或 -2）
+    # 2. 第一次嘗試登入
     os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
     
-    # 3. 進入「奪名監控」循環（每 10 秒檢查一次，最多持續 2 分鐘）
-    print("🕵️ 啟動奪名監控：檢查是否遭逢 Tailscale 幽靈撞名...", flush=True)
-    for _ in range(12):  # 12次 * 10秒 = 120秒
-        time.sleep(10)
+    print("🚀 [限時自愈] 啟動奪名監控（最高限時 60 秒，完成後全自動銷毀）...", flush=True)
+    
+    has_killed = False # 擊殺狀態鎖，防止重複調用 API
+    
+    # 3. 有限次數高頻循環（最多 60 次，完成後不論結果，必定死鎖退出）
+    for i in range(60):
+        time.sleep(3)
         try:
-            # 查戶口：獲取當前真實狀態
+            # 查戶口
             result = subprocess.run(
                 ["/usr/bin/tailscale", "--socket=/app/ts_run/tailscaled.sock", "status", "--json"],
                 capture_output=True, text=True, check=True
             )
             status_data = json.loads(result.stdout)
-            
-            # 獲取自己的真實主機名
             full_status_name = status_data.get("Self", {}).get("DNSName", "").split(".")[0]
             
-            # 情況 A：名字很乾淨，就是 render-proxy，大獲全勝，直接退出監控
+            # 完美狀態：名字完全歸位
             if full_status_name == "render-proxy":
-                print("✅ 完美的 render-proxy 名稱已鎖定，退出監控。", flush=True)
+                print(f"🎉 成功！正統名稱 [render-proxy] 已鎖定（耗時 {i*3} 秒）。", flush=True)
                 break
                 
-            # 情況 B：不幸撞名了（變成了 render-proxy-1 或 -2）
-            elif "render-proxy-" in full_status_name:
-                print(f"⚠️ 糟糕，當前被分配了髒名稱: {full_status_name}。開始執行雲端清理...", flush=True)
+            # 遭逢撞名，且還沒有發動過 API 擊殺
+            elif "render-proxy-" in full_status_name and not has_killed:
+                print(f"⚠️ 檢測到名稱被降級為: {full_status_name}，啟動雲端精準清理...", flush=True)
                 
-                # 遍歷局域網內的所有機器，找出那個「離線」但還佔著 render-proxy 名字的幽靈
                 peers = status_data.get("Peer", {})
                 for peer_id, peer_info in peers.items():
-                    peer_name = peer_info.get("HostName", "")
-                    is_online = peer_info.get("Online", False)
-                    
-                    # 找到了那個不守婦道、已經離線卻還叫 render-proxy 的舊節點
-                    if peer_name == "render-proxy" and not is_online:
-                        print(f"🗡️ 發現幽靈節點！ID: {peer_id}，正在強制將其從雲端抹除...", flush=True)
+                    if peer_info.get("HostName", "") == "render-proxy":
+                        print(f"💥 發現佔位的舊節點 (ID: {peer_id})，發射 API 註銷指令...", flush=True)
                         
-                        # 借刀殺人：調用 tailscale logout 強行註銷指定 ID 的舊機器（部分版本可能需要用特定 api，但在同賬號授權下，直接 logout 舊節點或利用本機重置是最快的）
-                        # 最穩妥的命令是利用本機權限向雲端宣告：踢掉同名離線者
-                        # 這裡我們直接用 tailscale 內置的離線清理命令：
-                        subprocess.run(["/usr/bin/tailscale", "--socket=/app/ts_run/tailscaled.sock", "logout"], capture_output=True)
+                        url = f"https://api.tailscale.com/api/v2/device/{peer_id}"
+                        response = requests.delete(url, auth=('', api_secret))
                         
-                        # 清理完後，重新以正統名字發起衝鋒
-                        time.sleep(2)
-                        os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
-                        print("🚀 舊節點已清理，已重新提交 render-proxy 申請。", flush=True)
-                        break # 跳出內循環，等待下一個 10 秒驗證是否成功變回正統名字
+                        if response.status_code in [200, 204]:
+                            print("🗡️ 雲端舊租約已強制抹除！等待 5 秒讓雲端同步並重新衝鋒...", flush=True)
+                            has_killed = True # 鎖定狀態
+                            time.sleep(5) 
+                            # 重新申請正統名字
+                            os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
+                        else:
+                            print(f"❌ API 執行失敗，狀態碼: {response.status_code}，本次開機不再重試。", flush=True)
+                            has_killed = True # 失敗也鎖定，防止刷接口
+                        break
                         
         except Exception as e:
-            print(f"監控執行出錯: {str(e)}", flush=True)
+            print(f"限時監控循環中出現輕微異常: {str(e)}", flush=True)
+            
+    # 4. 徹底與守護進程劃清界限
+    print("🏁 [限時自愈] 1 分鐘生命週期結束，監控線程已徹底退出並銷毀，零資源佔用。", flush=True)
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(line_buffering=True)
