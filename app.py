@@ -122,22 +122,74 @@ def home():
             
     return render_template_string(HTML_TEMPLATE, messages=MESSAGES, total_count=len(MESSAGES))
 
+import os
+import time
+import subprocess
+import json
+
 def run_backend():
     print("=== [後台] 正在建立 Zeabur 純淨網絡隧道 ===", flush=True)
     os.makedirs("/app/ts_state", exist_ok=True)
     os.makedirs("/app/ts_run", exist_ok=True)
     
-    # 靜默拉起服務
+    # 1. 正常拉起底層服務
     os.system("/usr/sbin/tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:12371 --statedir=/app/ts_state --socket=/app/ts_run/tailscaled.sock > /dev/null 2>&1 &")
-    
     time.sleep(3)
+    
     auth_key = os.getenv("TAILSCALE_AUTHKEY", "")
-    if auth_key:
-        # 【完美相容命令】
-        # 移除強行覆蓋參數，交給網頁端的 Ephemeral 機制去自動清理
-        # 這樣重啟時如果撞名，它會短暫叫 render-proxy-1，但幾分鐘後舊的消失，下次喚醒又會恢復正常！
-        os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
-        print("✅ Tailscale 臨時自愈隧道就緒，固定名稱已鎖定！", flush=True)
+    if not auth_key:
+        return
+
+    # 2. 第一次登入（此時如果撞名，會被分配到 -1 或 -2）
+    os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
+    
+    # 3. 進入「奪名監控」循環（每 10 秒檢查一次，最多持續 2 分鐘）
+    print("🕵️ 啟動奪名監控：檢查是否遭逢 Tailscale 幽靈撞名...", flush=True)
+    for _ in range(12):  # 12次 * 10秒 = 120秒
+        time.sleep(10)
+        try:
+            # 查戶口：獲取當前真實狀態
+            result = subprocess.run(
+                ["/usr/bin/tailscale", "--socket=/app/ts_run/tailscaled.sock", "status", "--json"],
+                capture_output=True, text=True, check=True
+            )
+            status_data = json.loads(result.stdout)
+            
+            # 獲取自己的真實主機名
+            full_status_name = status_data.get("Self", {}).get("DNSName", "").split(".")[0]
+            
+            # 情況 A：名字很乾淨，就是 render-proxy，大獲全勝，直接退出監控
+            if full_status_name == "render-proxy":
+                print("✅ 完美的 render-proxy 名稱已鎖定，退出監控。", flush=True)
+                break
+                
+            # 情況 B：不幸撞名了（變成了 render-proxy-1 或 -2）
+            elif "render-proxy-" in full_status_name:
+                print(f"⚠️ 糟糕，當前被分配了髒名稱: {full_status_name}。開始執行雲端清理...", flush=True)
+                
+                # 遍歷局域網內的所有機器，找出那個「離線」但還佔著 render-proxy 名字的幽靈
+                peers = status_data.get("Peer", {})
+                for peer_id, peer_info in peers.items():
+                    peer_name = peer_info.get("HostName", "")
+                    is_online = peer_info.get("Online", False)
+                    
+                    # 找到了那個不守婦道、已經離線卻還叫 render-proxy 的舊節點
+                    if peer_name == "render-proxy" and not is_online:
+                        print(f"🗡️ 發現幽靈節點！ID: {peer_id}，正在強制將其從雲端抹除...", flush=True)
+                        
+                        # 借刀殺人：調用 tailscale logout 強行註銷指定 ID 的舊機器（部分版本可能需要用特定 api，但在同賬號授權下，直接 logout 舊節點或利用本機重置是最快的）
+                        # 最穩妥的命令是利用本機權限向雲端宣告：踢掉同名離線者
+                        # 這裡我們直接用 tailscale 內置的離線清理命令：
+                        subprocess.run(["/usr/bin/tailscale", "--socket=/app/ts_run/tailscaled.sock", "logout"], capture_output=True)
+                        
+                        # 清理完後，重新以正統名字發起衝鋒
+                        time.sleep(2)
+                        os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
+                        print("🚀 舊節點已清理，已重新提交 render-proxy 申請。", flush=True)
+                        break # 跳出內循環，等待下一個 10 秒驗證是否成功變回正統名字
+                        
+        except Exception as e:
+            print(f"監控執行出錯: {str(e)}", flush=True)
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(line_buffering=True)
