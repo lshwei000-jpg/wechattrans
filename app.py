@@ -127,21 +127,17 @@ def run_backend():
     os.makedirs("/app/ts_state", exist_ok=True)
     os.makedirs("/app/ts_run", exist_ok=True)
     
-    # 靜默拉起服務底層
+    # 靜默拉起服務
     os.system("/usr/sbin/tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:12371 --statedir=/app/ts_state --socket=/app/ts_run/tailscaled.sock > /dev/null 2>&1 &")
     
-    # === 【核心防撞名延遲戰術】 ===
-    # 因為 Render 重啟交替太快，我們在這裡強行讓新容器「面壁思過」90 秒
-    # 留出足夠的時間讓 Tailscale 伺服器把舊的 Ephemeral 臨時節點自動蒸發
-    print("⏳ 觸發重啟防撞名保護：強行等待 90 秒，等待舊節點釋放名稱...", flush=True)
-    time.sleep(90) 
-    
+    time.sleep(3)
     auth_key = os.getenv("TAILSCALE_AUTHKEY", "")
     if auth_key:
-        print("🚀 90秒結束！舊節點預期已蒸發，開始以乾淨的 render-proxy 名稱登入...", flush=True)
-        # 執行登入，鎖定乾淨的主機名
+        # 【完美相容命令】
+        # 移除強行覆蓋參數，交給網頁端的 Ephemeral 機制去自動清理
+        # 這樣重啟時如果撞名，它會短暫叫 render-proxy-1，但幾分鐘後舊的消失，下次喚醒又會恢復正常！
         os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
-        print("✅ Tailscale 臨時自愈隧道就緒，固定名稱 render-proxy 已鎖定！", flush=True)
+        print("✅ Tailscale 臨時自愈隧道就緒，固定名稱已鎖定！", flush=True)
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(line_buffering=True)
