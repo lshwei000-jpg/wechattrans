@@ -24,19 +24,24 @@ def run_gost_bridge():
     print("🚀 [Gost] 正在拉起 Gost 高性能長連接代理橋梁...", flush=True)
     time.sleep(5)
     
-    # 監聽本地 11111（微信連這個），轉發給內部 Tailscale 的 11112
-    # ?mwm=100&max_conns=100&keepalive=true 鎖死連接池，防止端口用盡
-    gost_cmd = (
-        "/app/gost -L=\"socks5://:11111?mwm=100&max_conns=100&keepalive=true\" "
-        "-F=\"socks5://127.0.0.1:11112\" > /dev/null 2>&1"
-    )
+    # 👑 【精準修正版】：使用陣列傳參，徹底絕育 Linux Shell 符號解析 Bug
+    gost_args = [
+        "/app/gost",
+        "-L=socks5://:11111?mwm=100&max_conns=100&keepalive=true",
+        "-F=socks5://127.0.0.1:11112"
+    ]
     
     while True:
         try:
-            os.system(gost_cmd)
+            # 使用 Popen 靜默啟動，將輸出導向黑洞，防止日誌刷屏
+            with open(os.devnull, 'w') as devnull:
+                process = subprocess.Popen(gost_args, stdout=devnull, stderr=devnull)
+                print("🟢 [Gost] 核心長連接池已在後台穩健監聽 11111 端口！", flush=True)
+                process.wait() # 讓線程在這裡等待 Gost 運行
         except Exception as e:
             print(f"⚠️ [Gost] 異常退出: {e}，5秒後重啟...", flush=True)
             time.sleep(5)
+            
 
 # 👑 絕活二：雲端奪名大循環（解決 Render 無狀態重啟導致域名變動的問題）
 def run_tailscale_snatch(auth_key, api_secret):
