@@ -1,22 +1,23 @@
 FROM alpine:latest
 
-# 1. 安装基础系统核心组件
-RUN apk add --no-cache ca-certificates tailscale curl bash python3 py3-pip
+# 安装基础依赖：Tailscale 官方包、curl (API调用)、iproute2 (使用 ss 命令监控端口)
+RUN apk update && apk add --no-cache \
+    tailscale \
+    curl \
+    iproute2 \
+    ca-certificates \
+    bash \
+    iptables
 
-# 2. 下载并配置后台网络内核工具 GOST（和你之前保持完全一致）
-RUN curl -L https://github.com/go-gost/gost/releases/download/v3.0.0/gost_3.0.0_linux_amd64.tar.gz | tar -xz && \
-    mv gost /usr/bin/sys-service-core && \
-    chmod +x /usr/bin/sys-service-core
+# 下载并安装 Gost (以 v2 为例，如需 v3 请更换下载链接)
+RUN curl -L https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz | gunzip > /usr/local/bin/gost \
+    && chmod +x /usr/local/bin/gost
 
-# 3. 设置工作目录并将代码复制进去
-WORKDIR /app
-COPY . /app
+# 复制启动脚本
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-# 4. 预先安装 Python 环境
-RUN pip3 install --no-cache-dir flask --break-system-packages
+# 暴露你的 Gost 转发端口（根据你在 entrypoint.sh 里的配置修改）
+EXPOSE 8080
 
-# 5. 暴露端口（Zeabur 会自动识别暴露的端口并为你生成公网域名）
-EXPOSE 7860
-
-# 6. 启动命令
-CMD ["python3", "app.py"]
+ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]
