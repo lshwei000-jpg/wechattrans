@@ -17,8 +17,8 @@
 		3.4.1 找到并展开Advanced（高级设置）按钮
 		3.4.2 找到Environment Variables（环境变量）区域，点击Add Environment Variable
 		3.4.3 填入以下内容
-			Key :TAILSCALE_AUTHKEY
-			Value : 填入你在Tailscale 官网申请的、以tskey-auth-开头的密钥
+			TAILSCALE_AUTHKEY=tskey-auth-...
+			TS_API_SECRET= tskey-api-...（用于域名夺名自愈）
 	3.5 检查所有配置无误后，点击最下方的Create Web Service按钮
 访问前端：在Render 页面左上角（项目名称下方），你会看到一个形如https://xxxx.onrender.com的免费公网网址
 
