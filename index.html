@@ -3,20 +3,333 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Service Status</title>
+    <title>炫酷科技风 | Tech Future</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f5f7fa; color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center; max-width: 400px; }
-        h1 { color: #10b981; margin-bottom: 10px; font-size: 24px; }
-        p { color: #6b7280; font-size: 14px; line-height: 1.5; }
-        .badge { display: inline-block; background: #ecfdf5; color: #059669; padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 12px; margin-top: 15px; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        /* 页面整体样式 */
+        body {
+            min-height: 100vh;
+            background: #050d21;
+            color: #ffffff;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* 动态粒子背景层 */
+        #particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+        }
+
+        /* 霓虹渐变边框 */
+        .neon-border {
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.2),
+                        inset 0 0 15px rgba(0, 212, 255, 0.1);
+            border-radius: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .neon-border:hover {
+            box-shadow: 0 0 25px rgba(0, 212, 255, 0.4),
+                        inset 0 0 20px rgba(0, 212, 255, 0.2);
+            transform: translateY(-5px);
+        }
+
+        /* 导航栏 */
+        header {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            padding: 20px 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(5, 13, 33, 0.8);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            background: linear-gradient(90deg, #00d4ff, #0066ff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        nav a {
+            color: #fff;
+            text-decoration: none;
+            margin-left: 30px;
+            font-size: 16px;
+            position: relative;
+        }
+
+        nav a::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: #00d4ff;
+            transition: width 0.3s ease;
+        }
+
+        nav a:hover::after {
+            width: 100%;
+        }
+
+        /* 主内容区 */
+        .container {
+            padding: 120px 5% 50px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* 英雄区 */
+        .hero {
+            height: 80vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .hero h1 {
+            font-size: 56px;
+            margin-bottom: 20px;
+            background: linear-gradient(90deg, #00d4ff, #0066ff, #9900ff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }
+
+        .hero p {
+            font-size: 18px;
+            color: #a0b4e2;
+            max-width: 700px;
+            line-height: 1.6;
+            margin-bottom: 40px;
+        }
+
+        /* 科技感按钮 */
+        .btn {
+            padding: 12px 35px;
+            background: linear-gradient(90deg, #0066ff, #00d4ff);
+            border: none;
+            border-radius: 50px;
+            color: #fff;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(0, 102, 255, 0.4);
+            transition: all 0.3s ease;
+            text-decoration: none;
+        }
+
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 25px rgba(0, 102, 255, 0.6);
+        }
+
+        /* 功能卡片区 */
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-top: 50px;
+        }
+
+        .card {
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.03);
+            z-index: 1;
+        }
+
+        .card h3 {
+            font-size: 22px;
+            margin-bottom: 15px;
+            color: #00d4ff;
+        }
+
+        .card p {
+            color: #a0b4e2;
+            line-height: 1.5;
+        }
+
+        /* 底部 */
+        footer {
+            text-align: center;
+            padding: 30px;
+            color: #778bb6;
+            margin-top: 80px;
+            border-top: 1px solid rgba(0, 212, 255, 0.1);
+        }
+
+        /* 响应式适配 */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 36px;
+            }
+            nav a {
+                margin-left: 15px;
+                font-size: 14px;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>陣列節點服務運行中</h1>
-        <p>當前邊緣計算網絡（Edge Computing Node）已成功與中央叢集對接，正在提供靜態負載均衡與數據路由服務。</p>
-        <div class="badge">STATUS: HEALTHY</div>
+    <!-- 粒子背景 -->
+    <canvas id="particles"></canvas>
+
+    <!-- 导航栏 -->
+    <header>
+        <div class="logo">TECH FUTURE</div>
+        <nav>
+            <a href="#">首页</a>
+            <a href="#">技术</a>
+            <a href="#">产品</a>
+            <a href="#">关于</a>
+            <a href="#">联系</a>
+        </nav>
+    </header>
+
+    <!-- 主内容 -->
+    <div class="container">
+        <!-- 英雄区 -->
+        <section class="hero">
+            <h1>未来科技 · 触手可及</h1>
+            <p>融合人工智能、大数据与云计算，打造下一代数字化体验，用科技重新定义未来生活与工作方式。</p>
+            <a href="#" class="btn">探索科技</a>
+        </section>
+
+        <!-- 科技卡片 -->
+        <section class="cards">
+            <div class="card neon-border">
+                <h3>人工智能</h3>
+                <p>基于深度学习与神经网络，构建智能化决策系统，为各行业提供高效智能解决方案。</p>
+            </div>
+            <div class="card neon-border">
+                <h3>云计算</h3>
+                <p>分布式云端架构，实现弹性扩展与安全存储，让数据处理与应用运行更加稳定高效。</p>
+            </div>
+            <div class="card neon-border">
+                <h3>区块链</h3>
+                <p>去中心化加密技术，保障数据安全与可信传输，构建透明、安全、不可篡改的数字生态。</p>
+            </div>
+            <div class="card neon-border">
+                <h3>元宇宙</h3>
+                <p>沉浸式虚拟交互空间，融合VR/AR技术，创造全新的社交、娱乐与工作数字化场景。</p>
+            </div>
+            <div class="card neon-border">
+                <h3>物联网</h3>
+                <p>万物互联智能生态，实现设备间智能联动，打造自动化、智能化的现代生活环境。</p>
+            </div>
+            <div class="card neon-border">
+                <h3>大数据</h3>
+                <p>海量数据挖掘与分析，精准洞察趋势与需求，为商业决策提供科学可靠的数据支撑。</p>
+            </div>
+        </section>
     </div>
+
+    <!-- 底部 -->
+    <footer>
+        <p>© 2025 Tech Future 炫酷科技风网页 | 保留所有权利</p>
+    </footer>
+
+    <!-- 粒子动画JS -->
+    <script>
+        const canvas = document.getElementById('particles');
+        const ctx = canvas.getContext('2d');
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+        let particles = [];
+
+        // 粒子类
+        class Particle {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.size = Math.random() * 2 + 0.5;
+                this.speedX = Math.random() * 0.5 - 0.25;
+                this.speedY = Math.random() * 0.5 - 0.25;
+                this.color = 'rgba(0, 212, 255, 0.4)';
+            }
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                if(this.x < 0 || this.x > width) this.speedX *= -1;
+                if(this.y < 0 || this.y > height) this.speedY *= -1;
+            }
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // 初始化粒子
+        function init() {
+            particles = [];
+            for(let i=0; i<100; i++) {
+                particles.push(new Particle());
+            }
+        }
+
+        // 粒子连线
+        function connect() {
+            for(let a=0; a<particles.length; a++) {
+                for(let b=a; b<particles.length; b++) {
+                    let dx = particles[a].x - particles[b].x;
+                    let dy = particles[a].y - particles[b].y;
+                    let distance = Math.sqrt(dx*dx + dy*dy);
+                    if(distance < 100) {
+                        ctx.strokeStyle = `rgba(0, 212, 255, ${0.2 - distance/500})`;
+                        ctx.lineWidth = 0.5;
+                        ctx.beginPath();
+                        ctx.moveTo(particles[a].x, particles[a].y);
+                        ctx.lineTo(particles[b].x, particles[b].y);
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        // 动画循环
+        function animate() {
+            ctx.clearRect(0,0,width,height);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            connect();
+            requestAnimationFrame(animate);
+        }
+
+        // 窗口大小变化适配
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            init();
+        });
+
+        init();
+        animate();
+    </script>
 </body>
 </html>
