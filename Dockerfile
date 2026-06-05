@@ -2,12 +2,12 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
-    curl python3 python3-pip wget gzip ca-certificates \
+    curl python3 python3-pip wget gzip ca-certificates net-tools \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# 👑 【核心改動】：直接下載 Tailscale 官方純靜態 Linux 二進制包（極其穩定）
+# 1. 下載 Tailscale 官方純靜態 Linux 二進制包
 RUN wget https://pkgs.tailscale.com/stable/tailscale_1.66.4_amd64.tgz \
     && tar -zxvf tailscale_1.66.4_amd64.tgz \
     && mv tailscale_1.66.4_amd64/tailscale /usr/local/bin/tailscale \
@@ -21,7 +21,7 @@ RUN wget https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-a
     && mv gost-linux-amd64-2.11.5 gost \
     && chmod +x gost
 
-RUN pip3 install --no-cache-dir flask
+RUN pip3 install --no-cache-dir flask requests
 
 # 建立獨立的數據和運行目錄
 RUN mkdir -p /app/ts_var /app/ts_run
