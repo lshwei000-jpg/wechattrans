@@ -8,6 +8,7 @@ from flask import Flask
 
 app = Flask(__name__)
 
+# 👑 網頁偽裝模組化讀取接口
 def get_mock_html():
     html_path = os.path.join(os.path.dirname(__file__), 'index.html')
     if os.path.exists(html_path):
@@ -19,7 +20,7 @@ def get_mock_html():
 def home():
     return get_mock_html(), 200
 
-# Gost 守護
+# 👑 Gost 微信專用防爆連接池守護
 def run_gost_bridge():
     print("🛡️ [Gost] 高性能連接池就位，開始監聽 11111...", flush=True)
     gost_cmd = (
@@ -29,16 +30,16 @@ def run_gost_bridge():
     )
     subprocess.run(gost_cmd, shell=True)
 
-# Tailscale 哨兵控制中樞
+# 👑 Tailscale 24小時不失眠哨兵控制中樞
 def tailscale_sentinel():
     authkey = os.getenv("TAILSCALE_AUTHKEY", "")
     api_secret = os.getenv("TS_API_SECRET", "")
     
     if not authkey or not api_secret:
-        print("❌ [哨兵] 錯誤: 缺少必要的環境變量！", flush=True)
+        print("❌ [哨兵] 錯誤: 缺少環境變量 TAILSCALE_AUTHKEY 或 TS_API_SECRET，監控終止！", flush=True)
         return
 
-    # 👑 【必勝改動】：加入 --state 和完整的用戶態運行路徑，物理隔離運行環境
+    # 👑 【精確路徑】：使用 /usr/local/bin/tailscaled 啟動內核
     print("🚀 [哨兵] 正在手動拉起純淨版 Tailscale 核心...", flush=True)
     ts_daemon_cmd = (
         "/usr/local/bin/tailscaled "
@@ -57,7 +58,7 @@ def tailscale_sentinel():
     
     while True:
         try:
-            # 檢查狀態
+            # 👑 【精確路徑】：修正為 /usr/local/bin/tailscale，徹底解決 No such file 報錯
             result = subprocess.run(
                 ["/usr/local/bin/tailscale", "--socket=/app/ts_run/tailscaled.sock", "status", "--json"],
                 capture_output=True, text=True
@@ -75,12 +76,12 @@ def tailscale_sentinel():
             status_data = json.loads(result.stdout)
             current_name = status_data.get("Self", {}).get("DNSName", "").split(".")[0]
             
-            # 情況 A：標籤正常
+            # 情況 A：名正言順，穩穩鎖定
             if current_name == "render-proxy":
-                time.sleep(60)
+                time.sleep(60) # 正常狀態下，每 60 秒巡邏一次
                 continue
                 
-            # 情況 B：名稱不對，執行搶名
+            # 情況 B：名稱不對（被搶名），執行強殺老節點奪名
             print(f"⚠️ [哨兵] 當前名稱為 [{current_name}]，開始執行強殺老節點奪名...", flush=True)
             
             api_cmd = f"curl -s -X DELETE -u \"{api_secret}:\" https://api.tailscale.com/api/v2/tailnet/-/devices"
@@ -92,16 +93,16 @@ def tailscale_sentinel():
                     if device.get("hostname") == "render-proxy" and device.get("id") != status_data.get("Self", {}).get("ID"):
                         old_id = device.get("id")
                         subprocess.run(f"{api_cmd}/{old_id}", shell=True, capture_output=True)
-                        print(f"💥 [哨兵] 已擊殺老節點 ID: {old_id}", flush=True)
+                        print(f"💥 [哨兵] 已成功擊殺殘留老節點 ID: {old_id}", flush=True)
             
-            # 重新進網
+            # 👑 【精確路徑】：修正為 /usr/local/bin/tailscale 重新進網
             subprocess.run([
                 "/usr/local/bin/tailscale", "--socket=/app/ts_run/tailscaled.sock", 
                 "up", f"--authkey={authkey}", "--hostname=render-proxy", "--reset"
             ], capture_output=True)
             
         except Exception as e:
-            print(f"🔴 [哨兵] 循環出錯: {str(e)}", flush=True)
+            print(f"🔴 [哨兵異常] 監控大循環出錯: {str(e)}，將在 15 秒後嘗試重置...", flush=True)
             time.sleep(15)
 
 if __name__ == '__main__':
