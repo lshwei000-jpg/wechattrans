@@ -1,128 +1,102 @@
 import os
+import sys
 import time
-import socket
+import json
 import threading
 import subprocess
-import json
-import urllib.request
-import base64
-from flask import Flask, render_template_string
+from flask import Flask, Response
 
 app = Flask(__name__)
 
-# 🎭 網頁偽裝
-MOCK_HTML = "<html><body><h2>📋 System Dashboard</h2><ul><li>🟢 Network Status: Optimal</li></ul></body></html>"
+# 👑 網頁偽裝模組化讀取接口
+def get_mock_html():
+    html_path = os.path.join(os.path.dirname(__file__), 'index.html')
+    if os.path.exists(html_path):
+        with open(html_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    return "<h1>API Service Running</h1>"
 
 @app.route('/')
-def home(): return render_template_string(MOCK_HTML), 200
+def home():
+    return get_mock_html(), 200
 
-@app.route('/healthz')
-def healthz(): return "ok", 200
-
-# 👑 絕活一：Gost 高性能長連接橋樑（解決微信圖片傳輸慢、規避 TIME_WAIT 端口用盡）
+# 👑 Gost 微信專用防爆連接池守護
 def run_gost_bridge():
-    print("🚀 [Gost] 正在拉起 Gost 高性能長連接代理橋梁...", flush=True)
-    time.sleep(5)
-    
-    # 👑 【精準修正版】：使用陣列傳參，徹底絕育 Linux Shell 符號解析 Bug
-    gost_args = [
-        "/app/gost",
-        "-L=socks5://:11111?mwm=100&max_conns=100&keepalive=true",
+    print("🛡️ [Gost] 正在拉起微信專用高性能連接池...", flush=True)
+    # 鎖定最大300個長連接，開啟記憶體復用，加入30秒超時主動回收，物理閹割 TIME_WAIT 堆積
+    gost_cmd = (
+        "/app/gost "
+        "-L=socks5://:11111?mwm=100&max_conns=300&keepalive=true&ttl=30s "
         "-F=socks5://127.0.0.1:11112"
-    ]
+    )
+    subprocess.run(gost_cmd, shell=True)
+
+# 👑 Tailscale 24小時不失眠哨兵（帶自癒重啟邏輯）
+def tailscale_sentinel():
+    authkey = os.getenv("TAILSCALE_AUTHKEY", "")
+    api_secret = os.getenv("TS_API_SECRET", "")
+    
+    if not authkey or not api_secret:
+        print("❌ [哨兵] 錯誤: 缺少環境變量 TAILSCALE_AUTHKEY 或 TS_API_SECRET，監控終止！", flush=True)
+        return
+
+    # 首次啟動用戶態內核
+    print("🚀 [哨兵] 正在初始化 Tailscale 用戶態核心...", flush=True)
+    os.system("/usr/bin/tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:11112 --socket=/app/ts_run/tailscaled.sock > /dev/null 2>&1 &")
+    time.sleep(5)
+
+    # 啟動 Gost 橋樑對接
+    threading.Thread(target=run_gost_bridge, daemon=True).start()
+
+    # 進入 24 小時無限巡邏大循環
+    print("👁️ [哨兵] 24小時不間斷網絡健康監控已上線...", flush=True)
     
     while True:
         try:
-            # 使用 Popen 靜默啟動，將輸出導向黑洞，防止日誌刷屏
-            with open(os.devnull, 'w') as devnull:
-                process = subprocess.Popen(gost_args, stdout=devnull, stderr=devnull)
-                print("🟢 [Gost] 核心長連接池已在後台穩健監聽 11111 端口！", flush=True)
-                process.wait() # 讓線程在這裡等待 Gost 運行
-        except Exception as e:
-            print(f"⚠️ [Gost] 異常退出: {e}，5秒後重啟...", flush=True)
-            time.sleep(5)
-            
-
-# 👑 絕活二：雲端奪名大循環（解決 Render 無狀態重啟導致域名變動的問題）
-def run_tailscale_snatch(auth_key, api_secret):
-    print("🚀 [智能自癒] 啟動 Render 專屬域名奪名監控...", flush=True)
-    
-    for big_loop in range(1, 6):
-        time.sleep(4)
-        try:
-            # 獲取當前本機在 Tailscale 網絡中的狀態
+            # 檢查當前節點狀態
             result = subprocess.run(
                 ["/usr/bin/tailscale", "--socket=/app/ts_run/tailscaled.sock", "status", "--json"],
                 capture_output=True, text=True, check=True
             )
             status_data = json.loads(result.stdout)
-            full_status_name = status_data.get("Self", {}).get("DNSName", "").split(".")[0]
+            current_name = status_data.get("Self", {}).get("DNSName", "").split(".")[0]
             
-            # 如果成功拿到正統名字，大功告成，退出循環
-            if full_status_name == "render-proxy":
-                print("🎉 【奪名成功】本機已完美鎖定正統域名標識 [render-proxy]！", flush=True)
-                break
+            # 情況 A：名正言順，穩穩鎖定
+            if current_name == "render-proxy":
+                print("🟢 [哨兵巡邏] 網絡通道完美，正統標籤 [render-proxy] 鎖定中。", flush=True)
+                time.sleep(60) # 正常狀態下，每 60 秒巡邏一次，極致節省 CPU
+                continue
                 
-            # 如果被降級為 render-proxy-1 等，觸發擊殺清理邏輯
-            if "render-proxy-" in full_status_name:
-                print(f"⚠️ 檢測到名稱被降級為 {full_status_name}，啟動雲端老節點清理...", flush=True)
-                peers = status_data.get("Peer", {})
-                target_api_id = None
-                
-                # 尋找是哪台「死去的舊殘留機器」霸佔了 render-proxy 這個名字
-                for peer_id, peer_info in peers.items():
-                    if peer_info.get("HostName", "") == "render-proxy":
-                        target_api_id = peer_info.get("ID", "")
-                        break
-                
-                # 調用 Tailscale API 強制抹除老節點
-                if target_api_id and api_secret:
-                    url = f"https://api.tailscale.com/api/v2/device/{target_api_id}"
-                    req = urllib.request.Request(url, method="DELETE")
-                    auth_str = base64.b64encode(f":{api_secret}".encode()).decode()
-                    req.add_header("Authorization", f"Basic {auth_str}")
-                    try:
-                        with urllib.request.urlopen(req) as response:
-                            if response.status in [200, 204]: 
-                                print("🗡️ API 擊殺成功，已抹除阻礙域名的老節點殘留。", flush=True)
-                    except Exception as api_err: 
-                        print(f"❌ API 擊殺請求異常: {api_err}", flush=True)
-                
-                # 登出並重新衝鋒，強行頂替正統名字
-                print("🔄 正在重新登入以奪取正統域名...", flush=True)
-                subprocess.run(["/usr/bin/tailscale", "--socket=/app/ts_run/tailscaled.sock", "logout"], capture_output=True)
-                time.sleep(2)
-                os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
-                
+            # 情況 B：被搶名，降級為 render-proxy-1 等，觸發擊殺自癒
+            print(f"⚠️ [哨兵巡邏] 檢測到名稱異常降級為 [{current_name}]，啟動雲端老節點清理...", flush=True)
+            
+            # 調用 API 強殺阻礙域名的老殘留
+            api_cmd = f"curl -s -X DELETE -u \"{api_secret}:\" https://api.tailscale.com/api/v2/tailnet/-/devices"
+            devices_res = subprocess.run(f"curl -s -u \"{api_secret}:\" https://api.tailscale.com/api/v2/tailnet/-/devices", shell=True, capture_output=True, text=True)
+            
+            if devices_res.returncode == 0:
+                devices_data = json.loads(devices_res.stdout)
+                for device in devices_data.get("devices", []):
+                    if device.get("hostname") == "render-proxy" and device.get("id") != status_data.get("Self", {}).get("ID"):
+                        old_id = device.get("id")
+                        subprocess.run(f"{api_cmd}/{old_id}", shell=True, capture_output=True)
+                        print(f"💥 [哨兵] 已成功擊殺殘留老節點 ID: {old_id}", flush=True)
+            
+            # 重新登入以奪回正統域名
+            print("🔄 [哨兵] 正在重新登入以奪取正統域名...", flush=True)
+            subprocess.run([
+                "/usr/bin/tailscale", "--socket=/app/ts_run/tailscaled.sock", 
+                "up", f"--authkey={authkey}", "--hostname=render-proxy", "--reset"
+            ], capture_output=True)
+            
         except Exception as e:
-            print(f"❌ 自癒循環執行異常: {e}", flush=True)
-
-def run_backend():
-    print("=== [後台] 正在建立 Render 高性能自癒網絡隧道 ===", flush=True)
-    os.makedirs("/app/ts_state", exist_ok=True)
-    os.makedirs("/app/ts_run", exist_ok=True)
-    
-    # 1. 啟動 Tailscale 官方服務，縮回內部 11112 端口
-    os.system("/usr/sbin/tailscaled --tun=userspace-networking --socks5-server=127.0.0.1:11112 --statedir=/app/ts_state --socket=/app/ts_run/tailscaled.sock > /dev/null 2>&1 &")
-    time.sleep(3)
-    
-    # 2. 拉起 Gost 高性能長連接橋樑（接管前台 11111 端口）
-    threading.Thread(target=run_gost_bridge, daemon=True).start()
-    
-    auth_key = os.getenv("TAILSCALE_AUTHKEY", "")
-    api_secret = os.getenv("TS_API_SECRET", "") # 記得在 Render 後台配置此 API Access Token
-    
-    if not auth_key:
-        print("❌ 未檢測到 TAILSCALE_AUTHKEY，終止啟動。", flush=True)
-        return
-
-    # 3. 發起初始連接
-    print("🚀 發起初始網絡衝鋒 [目標名稱: render-proxy]...", flush=True)
-    os.system(f"/usr/bin/tailscale --socket=/app/ts_run/tailscaled.sock up --authkey={auth_key} --hostname=render-proxy --accept-dns=false")
-    
-    # 4. 併發執行奪名守護線程，確保域名不變
-    threading.Thread(target=run_tailscale_snatch, args=(auth_key, api_secret), daemon=True).start()
+            print(f"🔴 [哨兵異常] 監控大循環出錯: {str(e)}，將在 15 秒後嘗試重置...", flush=True)
+            time.sleep(15)
 
 if __name__ == '__main__':
-    threading.Thread(target=run_backend, daemon=True).start()
-    app.run(host='0.0.0.0', port=10000) # Render 要求的 Web 端口
+    # 啟動守護線程
+    threading.Thread(target=tailscale_sentinel, daemon=True).start()
+    
+    # 兼容 Render / Railway 端口綁定機制
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
