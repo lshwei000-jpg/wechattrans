@@ -39,8 +39,15 @@ def tailscale_sentinel():
         print("❌ [哨兵] 錯誤: 缺少環境變量 TAILSCALE_AUTHKEY 或 TS_API_SECRET，監控終止！", flush=True)
         return
 
-    # 👑 【精確路徑】：使用 /usr/local/bin/tailscaled 啟動內核
-    print("🚀 [哨兵] 正在手動拉起純淨版 Tailscale 核心...", flush=True)
+    # 👑【天王蓋地虎：物理清場】強制擊殺任何可能殘留的舊進程，防止 bad version 踩踏
+    print("🧹 [🧹 清場] 正在強力清空後台殘留的僵屍進程...", flush=True)
+    os.system("pkill -9 -f tailscaled")
+    os.system("pkill -9 -f tailscale")
+    os.system("pkill -9 -f gost")
+    time.sleep(3) # 留出 3 秒讓作業系統徹底釋放端口
+
+    # 👑 使用完全精確的靜態二進制路徑啟動核心
+    print("🚀 [哨兵] 正在全新拉起純淨版 Tailscale 核心...", flush=True)
     ts_daemon_cmd = (
         "/usr/local/bin/tailscaled "
         "--tun=userspace-networking "
@@ -58,16 +65,16 @@ def tailscale_sentinel():
     
     while True:
         try:
-            # 👑 【精確路徑】：修正為 /usr/local/bin/tailscale，徹底解決 No such file 報錯
+            # 檢查狀態
             result = subprocess.run(
                 ["/usr/local/bin/tailscale", "--socket=/app/ts_run/tailscaled.sock", "status", "--json"],
                 capture_output=True, text=True
             )
             
-            # 如果核心沒響應，說明進程死了，觸發自癒重啟
+            # 如果核心沒響應，說明進程死鎖或崩潰，觸發自癒重啟
             if result.returncode != 0:
-                print("🚨 [哨兵] 檢測到 Tailscale 核心無響應，正在嘗試修復進程...", flush=True)
-                os.system("pkill -f tailscaled")
+                print("🚨 [哨兵] 檢測到 Tailscale 核心無響應，正在自動重置進程...", flush=True)
+                os.system("pkill -9 -f tailscaled")
                 time.sleep(2)
                 os.system(ts_daemon_cmd)
                 time.sleep(5)
@@ -95,7 +102,7 @@ def tailscale_sentinel():
                         subprocess.run(f"{api_cmd}/{old_id}", shell=True, capture_output=True)
                         print(f"💥 [哨兵] 已成功擊殺殘留老節點 ID: {old_id}", flush=True)
             
-            # 👑 【精確路徑】：修正為 /usr/local/bin/tailscale 重新進網
+            # 重新進網
             subprocess.run([
                 "/usr/local/bin/tailscale", "--socket=/app/ts_run/tailscaled.sock", 
                 "up", f"--authkey={authkey}", "--hostname=render-proxy", "--reset"
